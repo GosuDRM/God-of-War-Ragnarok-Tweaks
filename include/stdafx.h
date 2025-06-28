@@ -13,7 +13,7 @@
 #include <vector>
 #include <inttypes.h>
 #include <sstream>
-#include "inipp/inipp.h"
+#include "inipp.h"
 #pragma GCC diagnostic warning "-Wdelete-non-abstract-non-virtual-dtor"
 #pragma GCC diagnostic warning "-Wuninitialized"
 #include <SDKDDKVer.h>
