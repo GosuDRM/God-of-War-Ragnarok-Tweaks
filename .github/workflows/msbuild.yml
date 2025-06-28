@@ -102,7 +102,7 @@ jobs:
           path: |
             ${{ env.INSTALL_CONFIGURATION }}
       - name: Prepare Release
-        if: env.WANT_RELEASE == 'true' and env.IS_PUSH == 'true'
+        if: env.WANT_RELEASE == 'true' && env.IS_PUSH == 'true'
         run: |
           $hashMarkdown = @'
           
@@ -117,7 +117,7 @@ jobs:
           
           Remove-Item -Path ${{ env.INSTALL_CONFIGURATION }} -Recurse
       - name: Branch Check
-        if: env.WANT_RELEASE == 'true' and env.IS_PUSH == 'true'
+        if: env.WANT_RELEASE == 'true' && env.IS_PUSH == 'true'
         run: |
           $prerelease = ""
           if ("${{ env.BRANCH }}" -ieq "main")
@@ -132,24 +132,6 @@ jobs:
           }
           echo "prerelease=$prerelease" >> $Env:GITHUB_ENV
       - name: Debug Release Information
-        if: env.WANT_RELEASE == 'true' and env.IS_PUSH == 'true'
+        if: env.WANT_RELEASE == 'true' && env.IS_PUSH == 'true'
         run: |
           echo "Creating release with tag: ${{ env.commit_ver }}"
-          echo "Target SHA: ${{ github.sha }}"
-          echo "Files to upload:"
-          echo "  - ${{ env.zip_file }}"
-          echo "Prerelease flag: ${{ env.prerelease }}"
-          echo "Current working directory: $(pwd)"
-          echo "Files in directory:"
-          Get-ChildItem -Path . -File
-      - name: Create Release
-        if: env.WANT_RELEASE == 'true' and env.IS_PUSH == 'true'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release create "${{ env.commit_ver }}" `
-            "${{ env.zip_file }}" `
-            --target "${{ github.sha }}" `
-            --title "${{ env.commit_ver }}" `
-            --notes-file "hash.md" `
-            ${{ env.prerelease }}
