@@ -40,7 +40,7 @@ jobs:
           $_ver = "1.0.$(git rev-list HEAD --count)-$(git rev-parse --short=8 HEAD)+${{ github.run_number }}-branch-$branch"
           echo "commit_ver=$_ver" >> "$Env:GITHUB_ENV"
           echo "zip_name=$cmdOutput-$_ver" >> "$Env:GITHUB_ENV"
-          echo "zip_file=${{ github.workspace }}\$cmdOutput-$_ver.zip" >> "$Env:GITHUB_ENV" # Changed to .zip
+          echo "zip_file=${{ github.workspace }}\$cmdOutput-$_ver.zip" >> "$Env:GITHUB_ENV"
           echo "folder=$cmdOutput" >> "$Env:GITHUB_ENV"
           echo "BUILD_CONFIGURATION=${{ github.workspace }}/out/build/${{ env.BUILD_PRESET }}" >> "$Env:GITHUB_ENV"
           $push = "false"
@@ -67,7 +67,8 @@ jobs:
       - name: Setup CMake Project (${{ env.CONFIGURATION }}-x64)
         run: cmake --preset ${{ env.BUILD_PRESET }}
       - name: Build CMake Project (${{ env.CONFIGURATION }}-x64)
-        run: cmake --build ${{ env.BUILD_CONFIGURATION }} --config ${{ env.CONFIGURATION }} -- /verbosity:normal
+        # TWEAK: Added /m for parallel compilation and /verbosity:minimal
+        run: cmake --build ${{ env.BUILD_CONFIGURATION }} --config ${{ env.CONFIGURATION }} -- /m /verbosity:minimal
       - name: Install CMake Project (${{ env.CONFIGURATION }}-x64)
         run: cmake --install ${{ env.BUILD_CONFIGURATION }} --config ${{ env.CONFIGURATION }}
       - name: Bundle loaders and data files
