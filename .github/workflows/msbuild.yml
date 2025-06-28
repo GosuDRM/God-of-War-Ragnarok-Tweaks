@@ -37,7 +37,7 @@ jobs:
           $cmdOutput = Split-Path -Path $pwd -Leaf
           $branch = "${{ github.ref_name }}"
           $branch = $branch.replace('/','-')
-          $_ver = "1.0.$(git rev-list HEAD --count)-$(git rev-parse --short=8 HEAD)+${{ github.run_number }}-branch-$branch"
+          $_ver = "1.0.$(git rev-list HEAD --count)+${{ github.run_number }}-branch-$branch"
           echo "commit_ver=$_ver" >> "$Env:GITHUB_ENV"
           echo "zip_name=$cmdOutput-$_ver" >> "$Env:GITHUB_ENV"
           echo "zip_file=${{ github.workspace }}\$cmdOutput-$_ver.zip" >> "$Env:GITHUB_ENV"
@@ -74,10 +74,10 @@ jobs:
         working-directory: ${{ env.INSTALL_CONFIGURATION }}
         run: |
           mkdir x64
-          Copy-Item -Recurse -Force x64/* ${{ env.DLL_OUT }}
+          Copy-Item -Recurse -Force x64\* ${{ env.DLL_OUT }}
       - name: Clean output folder
         run: |
-          Remove-Item -Path ${{ env.INSTALL_CONFIGURATION }} -Recurse -Include *.lib,*.gitkeep,*.pdb
+          Get-ChildItem -Path ${{ env.INSTALL_CONFIGURATION }} -Recurse -Include *.lib,*.gitkeep,*.pdb | Remove-Item -Force
           $Folders = Get-ChildItem -Path ${{ env.INSTALL_CONFIGURATION }}\${{ env.DLL_OUT }} -Directory
           foreach ($Folder in $Folders)
           {
@@ -106,12 +106,23 @@ jobs:
       - name: Prepare Release
         if: env.WANT_RELEASE == 'true' && env.IS_PUSH == 'true'
         run: |
-          $hashMarkdown = @'
-          This release contains the compiled files.
-          '@
-          $hashMarkdown | Out-File -FilePath hash.md
-          Compress-Archive -Path "${{ env.INSTALL_CONFIGURATION }}\${{ env.DLL_OUT }}" -DestinationPath "${{ env.zip_file }}"
-          Remove-Item -Path ${{ env.INSTALL_CONFIGURATION }} -Recurse -Include *.pdb
+          $tempDir = "${{ github.workspace }}\temp_zip"
+          New-Item -ItemType Directory -Path $tempDir -Force
+          
+          $files = Get-ChildItem -Path "${{ env.INSTALL_CONFIGURATION }}\${{ env.DLL_OUT }}" -Recurse -Include *.asi,*.dll
+          if ($files.Count -eq 0) {
+              Write-Error "No .asi or .dll files found to package"
+              exit 1
+          }
+          
+          $files | ForEach-Object {
+              Copy-Item $_.FullName -Destination $tempDir
+          }
+          
+          Compress-Archive -Path "$tempDir\*" -DestinationPath "${{ env.zip_file }}"
+          
+          Remove-Item -Path $tempDir -Recurse -Force
+          Get-ChildItem -Path ${{ env.INSTALL_CONFIGURATION }} -Recurse -Include *.pdb | Remove-Item -Force
       - name: Branch Check
         if: env.WANT_RELEASE == 'true' && env.IS_PUSH == 'true'
         run: |
@@ -147,5 +158,4 @@ jobs:
             "${{ env.zip_file }}" `
             --target "${{ github.sha }}" `
             --title "${{ env.commit_ver }}" `
-            --notes-file "hash.md" `
             ${{ env.prerelease }}
