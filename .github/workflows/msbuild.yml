@@ -20,7 +20,6 @@ jobs:
       BUILD_PRESET: Win64
       CONFIGURATION: RelWithDebInfo
       INSTALL_CONFIGURATION: ${{ github.workspace }}/out/install
-      # Removed: DLL_OUT: GoWR.Tweaks
     permissions:
       contents: write
       packages: write
@@ -62,7 +61,6 @@ jobs:
       - name: Setup install folder for CI
         run: |
           $myFile = "${{github.workspace}}\CMakePresets.json"
-          # CMake will now install directly into 'out/install/'
           (Get-Content $myFile ).Replace('"installDir": "${sourceDir}/out/install",', '"installDir": "${sourceDir}/out/install/",') | Set-Content $myFile
           cat $myFile
       - name: Setup CMake Project (${{ env.CONFIGURATION }}-x64)
@@ -75,12 +73,10 @@ jobs:
         working-directory: ${{ env.INSTALL_CONFIGURATION }}
         run: |
           mkdir x64
-          # Copy x64 compiled artifacts directly into the install folder (out/install)
           Copy-Item -Recurse -Force x64/* .
       - name: Clean output folder
         run: |
           Remove-Item -Path ${{ env.INSTALL_CONFIGURATION }} -Recurse -Include *.lib,*.gitkeep
-          # Adjust folder iteration to directly check within INSTALL_CONFIGURATION
           $Folders = Get-ChildItem -Path ${{ env.INSTALL_CONFIGURATION }} -Directory
           foreach ($Folder in $Folders)
           {
@@ -115,14 +111,10 @@ jobs:
           '@
           $hashMarkdown | Out-File -FilePath hash.md
           
-          # Navigate to the install directory
           Set-Location -Path "${{ env.INSTALL_CONFIGURATION }}"
-          # Select only .asi files and compress them directly into the zip file
           Get-ChildItem -Path . -Filter "*.asi" | Compress-Archive -DestinationPath "${{ env.zip_file }}"
-          # Navigate back to the workspace root
           Set-Location -Path "${{ github.workspace }}"
           
-          # Final cleanup of the install directory
           Remove-Item -Path ${{ env.INSTALL_CONFIGURATION }} -Recurse
       - name: Branch Check
         if: env.WANT_RELEASE == 'true' and env.IS_PUSH == 'true'
