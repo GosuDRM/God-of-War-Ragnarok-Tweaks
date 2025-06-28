@@ -16,12 +16,18 @@ include_directories(
     "${CMAKE_SOURCE_DIR}/external/imgui"
 )
 
-# Add imgui as a static library
+# Add imgui as a static library (only if files exist)
 file(GLOB IMGUI_SOURCES 
     "${CMAKE_SOURCE_DIR}/external/imgui/*.cpp"
     "${CMAKE_SOURCE_DIR}/external/imgui/*.h"
 )
-add_library(imgui STATIC ${IMGUI_SOURCES})
+
+if(IMGUI_SOURCES)
+    add_library(imgui STATIC ${IMGUI_SOURCES})
+    message(STATUS "imgui library created with ${list_length} source files")
+else()
+    message(WARNING "imgui sources not found - skipping imgui library creation")
+endif()
 
 if (WANT_X86)
     # BF3.Patches was removed
