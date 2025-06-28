@@ -36,11 +36,11 @@ jobs:
           $cmdOutput = Split-Path -Path $pwd -Leaf
           $branch = "${{ github.ref_name }}"
           $branch = $branch.replace('/','-')
-          # Corrected: Removed extra 'git' in $(git git rev-parse)
           $_ver = "1.0.$(git rev-list HEAD --count)-$(git rev-parse --short=8 HEAD)+${{ github.run_number }}-branch-$branch"
           echo "commit_ver=$_ver" >> "$Env:GITHUB_ENV"
           echo "zip_name=$cmdOutput-$_ver" >> "$Env:GITHUB_ENV"
-          echo "zip_file=${{ github.workspace }}\$cmdOutput-$_ver.zip" >> "$Env:GITHUB_ENV"
+          # CORRECTED: Use $zip_name directly here, as it already includes $cmdOutput
+          echo "zip_file=${{ github.workspace }}\$zip_name.zip" >> "$Env:GITHUB_ENV"
           echo "folder=$cmdOutput" >> "$Env:GITHUB_ENV"
           echo "BUILD_CONFIGURATION=${{ github.workspace }}/out/build/${{ env.BUILD_PRESET }}" >> "$Env:GITHUB_ENV"
           $push = "false"
