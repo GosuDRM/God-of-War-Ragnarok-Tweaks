@@ -20,7 +20,7 @@ jobs:
       BUILD_PRESET: Win64
       CONFIGURATION: RelWithDebInfo
       INSTALL_CONFIGURATION: ${{ github.workspace }}/out/install
-      DLL_OUT: GoWR.Tweaks
+      DLL_OUT: GoWR.Tweaks # Changed from 'lib' to 'GoWR.Tweaks'
     permissions:
       contents: write
       packages: write
@@ -37,10 +37,10 @@ jobs:
           $cmdOutput = Split-Path -Path $pwd -Leaf
           $branch = "${{ github.ref_name }}"
           $branch = $branch.replace('/','-')
-          $_ver = "1.0.$(git rev-list HEAD --count)-$(git git rev-parse --short=8 HEAD)+${{ github.run_number }}-branch-$branch"
+          $_ver = "1.0.$(git rev-list HEAD --count)-$(git rev-parse --short=8 HEAD)+${{ github.run_number }}-branch-$branch"
           echo "commit_ver=$_ver" >> "$Env:GITHUB_ENV"
           echo "zip_name=$cmdOutput-$_ver" >> "$Env:GITHUB_ENV"
-          echo "zip_file=${{ github.workspace }}\$cmdOutput-$_ver.zip" >> "$Env:GITHUB_ENV"
+          echo "zip_file=${{ github.workspace }}\$cmdOutput-$_ver.zip" >> "$Env:GITHUB_ENV" # Reintroduced
           echo "folder=$cmdOutput" >> "$Env:GITHUB_ENV"
           echo "BUILD_CONFIGURATION=${{ github.workspace }}/out/build/${{ env.BUILD_PRESET }}" >> "$Env:GITHUB_ENV"
           $push = "false"
@@ -74,10 +74,11 @@ jobs:
         working-directory: ${{ env.INSTALL_CONFIGURATION }}
         run: |
           mkdir x64
+          # Assuming x64 artifacts are copied into the main DLL_OUT folder which is now GoWR.Tweaks
           Copy-Item -Recurse -Force x64/* ${{ env.DLL_OUT }}
       - name: Clean output folder
         run: |
-          Remove-Item -Path ${{ env.INSTALL_CONFIGURATION }} -Recurse -Include *.lib,*.gitkeep
+          Remove-Item -Path ${{ env.INSTALL_CONFIGURATION }} -Recurse -Include *.lib,*.gitkeep,*.pdb # Removed *.lib is now harmless as DLL_OUT is GoWR.Tweaks
           $Folders = Get-ChildItem -Path ${{ env.INSTALL_CONFIGURATION }}\${{ env.DLL_OUT }} -Directory
           foreach ($Folder in $Folders)
           {
@@ -88,22 +89,24 @@ jobs:
                   Remove-Item -Path $Folder.FullName -Recurse -Force
               }
           }
+      # "Generate Hash file" step remains removed as requested previously
       - name: Upload artifact (PDB)
-        if: false
+        if: false # env.IS_PUSH == 'true'
         uses: actions/upload-artifact@main
         with:
           name: ${{ env.zip_name }}-pdb
           path: |
             ${{ env.INSTALL_CONFIGURATION }}/${{ env.DLL_OUT }}
       - name: Upload artifact
-        if: false
+        if: false # env.IS_PUSH == 'true'
         uses: actions/upload-artifact@main
         with:
           name: ${{ env.zip_name }}
           path: |
             ${{ env.INSTALL_CONFIGURATION }}/${{ env.DLL_OUT }}
+            !${{ env.INSTALL_CONFIGURATION }}/${{ env.DLL_OUT }}/**/*.pdb
       - name: Prepare Release
-        if: env.WANT_RELEASE == 'true' and env.IS_PUSH == 'true'
+        if: env.WANT_RELEASE == 'true' && env.IS_PUSH == 'true'
         run: |
           $hashMarkdown = @'
           
@@ -112,17 +115,12 @@ jobs:
           '@
           $hashMarkdown | Out-File -FilePath hash.md
           
-          # Navigate into the GoWR.Tweaks directory
-          Set-Location -Path "${{ env.INSTALL_CONFIGURATION }}\${{ env.DLL_OUT }}"
-          # Select only .asi files and compress them directly into the zip file
-          Get-ChildItem -Path . -Filter "*.asi" | Compress-Archive -DestinationPath "${{ env.zip_file }}"
-          # Navigate back to the workspace root
-          Set-Location -Path "${{ github.workspace }}"
+          # Create the zip archive, now targeting only the GoWR.Tweaks folder
+          Compress-Archive -Path "${{ env.INSTALL_CONFIGURATION }}\${{ env.DLL_OUT }}" -DestinationPath "${{ env.zip_file }}"
           
-          # Ensure PDBs and any other unwanted files in the install directory are removed
-          Remove-Item -Path ${{ env.INSTALL_CONFIGURATION }} -Recurse
+          Remove-Item -Path ${{ env.INSTALL_CONFIGURATION }} -Recurse -Include *.pdb # Ensure PDBs are removed before final zip (redundant after archiving)
       - name: Branch Check
-        if: env.WANT_RELEASE == 'true' and env.IS_PUSH == 'true'
+        if: env.WANT_RELEASE == 'true' && env.IS_PUSH == 'true'
         run: |
           $prerelease = ""
           if ("${{ env.BRANCH }}" -ieq "main")
@@ -137,23 +135,23 @@ jobs:
           }
           echo "prerelease=$prerelease" >> $Env:GITHUB_ENV
       - name: Debug Release Information
-        if: env.WANT_RELEASE == 'true' and env.IS_PUSH == 'true'
+        if: env.WANT_RELEASE == 'true' && env.IS_PUSH == 'true'
         run: |
           echo "Creating release with tag: ${{ env.commit_ver }}"
           echo "Target SHA: ${{ github.sha }}"
           echo "Files to upload:"
-          echo "  - ${{ env.zip_file }}"
+          echo "  - ${{ env.zip_file }}" # Reintroduced
           echo "Prerelease flag: ${{ env.prerelease }}"
           echo "Current working directory: $(pwd)"
           echo "Files in directory:"
           Get-ChildItem -Path . -File
       - name: Create Release
-        if: env.WANT_RELEASE == 'true' and env.IS_PUSH == 'true'
+        if: env.WANT_RELEASE == 'true' && env.IS_PUSH == 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release create "${{ env.commit_ver }}" `
-            "${{ env.zip_file }}" `
+            "${{ env.zip_file }}" ` # Reintroduced
             --target "${{ github.sha }}" `
             --title "${{ env.commit_ver }}" `
             --notes-file "hash.md" `
