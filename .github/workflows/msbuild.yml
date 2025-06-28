@@ -20,7 +20,7 @@ jobs:
       BUILD_PRESET: Win64
       CONFIGURATION: RelWithDebInfo
       INSTALL_CONFIGURATION: ${{ github.workspace }}/out/install
-      DLL_OUT: lib
+      DLL_OUT: GoWR.Tweaks # This folder will contain the compiled ASI files
     permissions:
       contents: write
       packages: write
@@ -62,12 +62,12 @@ jobs:
       - name: Setup install folder for CI
         run: |
           $myFile = "${{github.workspace}}\CMakePresets.json"
+          # CMake will install directly into out/install/GoWR.Tweaks
           (Get-Content $myFile ).Replace('"installDir": "${sourceDir}/out/install",', '"installDir": "${sourceDir}/out/install/${{ env.DLL_OUT }}",') | Set-Content $myFile
           cat $myFile
       - name: Setup CMake Project (${{ env.CONFIGURATION }}-x64)
         run: cmake --preset ${{ env.BUILD_PRESET }}
       - name: Build CMake Project (${{ env.CONFIGURATION }}-x64)
-        # TWEAK: Added /m for parallel compilation and /verbosity:minimal
         run: cmake --build ${{ env.BUILD_CONFIGURATION }} --config ${{ env.CONFIGURATION }} -- /m /verbosity:minimal
       - name: Install CMake Project (${{ env.CONFIGURATION }}-x64)
         run: cmake --install ${{ env.BUILD_CONFIGURATION }} --config ${{ env.CONFIGURATION }}
@@ -75,10 +75,13 @@ jobs:
         working-directory: ${{ env.INSTALL_CONFIGURATION }}
         run: |
           mkdir x64
+          # Copy x64 compiled artifacts into the GoWR.Tweaks folder
           Copy-Item -Recurse -Force x64/* ${{ env.DLL_OUT }}
       - name: Clean output folder
         run: |
+          # Clean up temporary build artifacts, including any .pdb files
           Remove-Item -Path ${{ env.INSTALL_CONFIGURATION }} -Recurse -Include *.lib,*.gitkeep,*.pdb
+          # Remove any empty subdirectories that might have been created
           $Folders = Get-ChildItem -Path ${{ env.INSTALL_CONFIGURATION }}\${{ env.DLL_OUT }} -Directory
           foreach ($Folder in $Folders)
           {
@@ -89,26 +92,21 @@ jobs:
                   Remove-Item -Path $Folder.FullName -Recurse -Force
               }
           }
-      - name: Generate Hash file
-        run: |
-          echo "No ASI Plugin Hashes will be generated." > "${{ env.INSTALL_CONFIGURATION }}\hashes.txt"
       - name: Upload artifact (PDB)
-        if: false # env.IS_PUSH == 'true'
+        if: false # PDBs are already removed, and this upload is conditional
         uses: actions/upload-artifact@main
         with:
           name: ${{ env.zip_name }}-pdb
           path: |
             ${{ env.INSTALL_CONFIGURATION }}/${{ env.DLL_OUT }}
-            ${{ env.INSTALL_CONFIGURATION }}/hashes.txt
       - name: Upload artifact
-        if: false # env.IS_PUSH == 'true'
+        if: false # This upload is conditional
         uses: actions/upload-artifact@main
         with:
           name: ${{ env.zip_name }}
           path: |
             ${{ env.INSTALL_CONFIGURATION }}/${{ env.DLL_OUT }}
             !${{ env.INSTALL_CONFIGURATION }}/${{ env.DLL_OUT }}/**/*.pdb
-            ${{ env.INSTALL_CONFIGURATION }}/hashes.txt
       - name: Prepare Release
         if: env.WANT_RELEASE == 'true' && env.IS_PUSH == 'true'
         run: |
@@ -119,10 +117,14 @@ jobs:
           '@
           $hashMarkdown | Out-File -FilePath hash.md
           
-          # Create the zip archive
-          Compress-Archive -Path "${{ env.INSTALL_CONFIGURATION }}\${{ env.DLL_OUT }}", "${{ env.INSTALL_CONFIGURATION }}\hashes.txt" -DestinationPath "${{ env.zip_file }}"
+          # Navigate into the GoWR.Tweaks directory and compress its *contents* directly
+          Set-Location -Path "${{ env.INSTALL_CONFIGURATION }}\${{ env.DLL_OUT }}"
+          Compress-Archive -Path ./* -DestinationPath "${{ env.zip_file }}"
+          # Navigate back to the workspace root
+          Set-Location -Path "${{ github.workspace }}"
           
-          Remove-Item -Path ${{ env.INSTALL_CONFIGURATION }} -Recurse -Include *.pdb # Ensure PDBs are removed before final zip (redundant after archiving)
+          # Final cleanup, ensure PDBs are gone if they somehow lingered
+          Remove-Item -Path ${{ env.INSTALL_CONFIGURATION }} -Recurse -Include *.pdb
       - name: Branch Check
         if: env.WANT_RELEASE == 'true' && env.IS_PUSH == 'true'
         run: |
