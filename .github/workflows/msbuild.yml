@@ -24,6 +24,9 @@ jobs:
       DLL_OUT: lib
     permissions:
       contents: write
+      packages: write
+      actions: read
+      security-events: write
     steps:
       - name: Checkout main repository
         uses: actions/checkout@main
@@ -184,8 +187,28 @@ jobs:
               echo "Is not main release: ${{ env.BRANCH }}"
           }
           echo "prerelease=$prerelease" >> $Env:GITHUB_ENV
+      - name: Debug Release Information
+        if: env.WANT_RELEASE == 'true' && env.IS_PUSH == 'true'
+        run: |
+          echo "Creating release with tag: ${{ env.commit_ver }}"
+          echo "Target SHA: ${{ github.sha }}"
+          echo "Files to upload:"
+          echo "  - ${{ env.zip_file_pdb }}"
+          echo "  - ${{ env.zip_file }}"
+          echo "Prerelease flag: ${{ env.prerelease }}"
+          echo "Current working directory: $(pwd)"
+          echo "Files in directory:"
+          Get-ChildItem -Path . -File
       - name: Create Release
         if: env.WANT_RELEASE == 'true' && env.IS_PUSH == 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: '& gh release create ${{ env.commit_ver }} "${{ env.zip_file_pdb }}" "${{ env.zip_file }}" --target ${{ GITHUB.SHA }} -t "${{ env.commit_ver }}" -F hash.md${{ env.prerelease }}'
+        run: |
+          # Use GitHub CLI to create release
+          gh release create "${{ env.commit_ver }}" `
+            "${{ env.zip_file_pdb }}" `
+            "${{ env.zip_file }}" `
+            --target "${{ github.sha }}" `
+            --title "${{ env.commit_ver }}" `
+            --notes-file "hash.md" `
+            ${{ env.prerelease }}
