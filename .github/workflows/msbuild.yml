@@ -36,7 +36,8 @@ jobs:
           $cmdOutput = Split-Path -Path $pwd -Leaf
           $branch = "${{ github.ref_name }}"
           $branch = $branch.replace('/','-')
-          $_ver = "1.0.$(git rev-list HEAD --count)-$(git git rev-parse --short=8 HEAD)+${{ github.run_number }}-branch-$branch"
+          # Corrected: Removed extra 'git' in $(git git rev-parse)
+          $_ver = "1.0.$(git rev-list HEAD --count)-$(git rev-parse --short=8 HEAD)+${{ github.run_number }}-branch-$branch"
           echo "commit_ver=$_ver" >> "$Env:GITHUB_ENV"
           echo "zip_name=$cmdOutput-$_ver" >> "$Env:GITHUB_ENV"
           echo "zip_file=${{ github.workspace }}\$cmdOutput-$_ver.zip" >> "$Env:GITHUB_ENV"
@@ -135,3 +136,21 @@ jobs:
         if: env.WANT_RELEASE == 'true' && env.IS_PUSH == 'true'
         run: |
           echo "Creating release with tag: ${{ env.commit_ver }}"
+          echo "Target SHA: ${{ github.sha }}"
+          echo "Files to upload:"
+          echo "  - ${{ env.zip_file }}"
+          echo "Prerelease flag: ${{ env.prerelease }}"
+          echo "Current working directory: $(pwd)"
+          echo "Files in directory:"
+          Get-ChildItem -Path . -File
+      - name: Create Release
+        if: env.WANT_RELEASE == 'true' && env.IS_PUSH == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ env.commit_ver }}" `
+            "${{ env.zip_file }}" `
+            --target "${{ github.sha }}" `
+            --title "${{ env.commit_ver }}" `
+            --notes-file "hash.md" `
+            ${{ env.prerelease }}
