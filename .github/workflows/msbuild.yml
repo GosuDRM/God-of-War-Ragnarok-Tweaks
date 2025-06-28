@@ -1,109 +1,5 @@
-name: MSBuild
-
-on:
-  push:
-    paths-ignore:
-      - '**/*.md'
-  pull_request:
-    paths-ignore:
-      - '**/*.md'
-  workflow_dispatch:
-
-concurrency:
-  group: ${{ github.ref }}-${{ github.event_name }}
-  cancel-in-progress: true
-
-jobs:
-  build:
-    runs-on: windows-latest
-    env:
-      BUILD_PRESET: Win64
-      CONFIGURATION: RelWithDebInfo
-      INSTALL_CONFIGURATION: ${{ github.workspace }}/out/install
-      DLL_OUT: GoWR.Tweaks
-    permissions:
-      contents: write
-      packages: write
-      actions: read
-      security-events: write
-    steps:
-      - name: Checkout main repository
-        uses: actions/checkout@main
-        with:
-          submodules: recursive
-          fetch-depth: 0
-      - name: Setup environment variables
-        run: |
-          $cmdOutput = Split-Path -Path $pwd -Leaf
-          $branch = "${{ github.ref_name }}"
-          $branch = $branch.replace('/','-')
-          $_ver = "1.0.$(git rev-list HEAD --count)-$(git git rev-parse --short=8 HEAD)+${{ github.run_number }}-branch-$branch"
-          echo "commit_ver=$_ver" >> "$Env:GITHUB_ENV"
-          echo "zip_name=$cmdOutput-$_ver" >> "$Env:GITHUB_ENV"
-          echo "zip_file=${{ github.workspace }}\$cmdOutput-$_ver.zip" >> "$Env:GITHUB_ENV"
-          echo "folder=$cmdOutput" >> "$Env:GITHUB_ENV"
-          echo "BUILD_CONFIGURATION=${{ github.workspace }}/out/build/${{ env.BUILD_PRESET }}" >> "$Env:GITHUB_ENV"
-          $push = "false"
-          $pr = "true"
-          $is_pr = "${{ github.event_name }}" -ieq "pull_request"
-          if ("${{ github.event_name }}" -ieq "push" -or $is_pr)
-          {
-              $push = "true"
-          }
-          if ($is_pr)
-          {
-              $pr = "false"
-          }
-          echo "WANT_RELEASE=$pr" >> "$Env:GITHUB_ENV"
-          echo "IS_PUSH=$push" >> "$Env:GITHUB_ENV"
-          echo "BRANCH=$branch" >> "$Env:GITHUB_ENV"
-      - name: Add MSBuild to PATH
-        uses: microsoft/setup-msbuild@main
-      - name: Setup install folder for CI
-        run: |
-          $myFile = "${{github.workspace}}\CMakePresets.json"
-          (Get-Content $myFile ).Replace('"installDir": "${sourceDir}/out/install",', '"installDir": "${sourceDir}/out/install/${{ env.DLL_OUT }}",') | Set-Content $myFile
-          cat $myFile
-      - name: Setup CMake Project (${{ env.CONFIGURATION }}-x64)
-        run: cmake --preset ${{ env.BUILD_PRESET }}
-      - name: Build CMake Project (${{ env.CONFIGURATION }}-x64)
-        run: cmake --build ${{ env.BUILD_CONFIGURATION }} --config ${{ env.CONFIGURATION }} -- /m /verbosity:minimal
-      - name: Install CMake Project (${{ env.CONFIGURATION }}-x64)
-        run: cmake --install ${{ env.BUILD_CONFIGURATION }} --config ${{ env.CONFIGURATION }}
-      - name: Bundle loaders and data files
-        working-directory: ${{ env.INSTALL_CONFIGURATION }}
-        run: |
-          mkdir x64
-          Copy-Item -Recurse -Force x64/* ${{ env.DLL_OUT }}
-      - name: Clean output folder
-        run: |
-          Remove-Item -Path ${{ env.INSTALL_CONFIGURATION }} -Recurse -Include *.lib,*.gitkeep
-          $Folders = Get-ChildItem -Path ${{ env.INSTALL_CONFIGURATION }}\${{ env.DLL_OUT }} -Directory
-          foreach ($Folder in $Folders)
-          {
-              $HasRequiredFiles = Get-ChildItem -Path "$($Folder.FullName)\*" -Include *.asi,*.dll
-              if ($HasRequiredFiles.Count -eq 0)
-              {
-                  echo "$($Folder.FullName) not included"
-                  Remove-Item -Path $Folder.FullName -Recurse -Force
-              }
-          }
-      - name: Upload artifact (PDB)
-        if: false
-        uses: actions/upload-artifact@main
-        with:
-          name: ${{ env.zip_name }}-pdb
-          path: |
-            ${{ env.INSTALL_CONFIGURATION }}/${{ env.DLL_OUT }}
-      - name: Upload artifact
-        if: false
-        uses: actions/upload-artifact@main
-        with:
-          name: ${{ env.zip_name }}
-          path: |
-            ${{ env.INSTALL_CONFIGURATION }}/${{ env.DLL_OUT }}
-      - name: Prepare Release
-        if: env.WANT_RELEASE == 'true' and env.IS_PUSH == 'true'
+- name: Prepare Release
+        if: env.WANT_RELEASE == 'true' && env.IS_PUSH == 'true' # Changed 'and' to '&&'
         run: |
           $hashMarkdown = @'
           This release contains the compiled files.
@@ -121,7 +17,7 @@ jobs:
           # Ensure PDBs and any other unwanted files in the install directory are removed
           Remove-Item -Path ${{ env.INSTALL_CONFIGURATION }} -Recurse
       - name: Branch Check
-        if: env.WANT_RELEASE == 'true' and env.IS_PUSH == 'true'
+        if: env.WANT_RELEASE == 'true' && env.IS_PUSH == 'true' # Changed 'and' to '&&'
         run: |
           $prerelease = ""
           if ("${{ env.BRANCH }}" -ieq "main")
@@ -136,7 +32,7 @@ jobs:
           }
           echo "prerelease=$prerelease" >> $Env:GITHUB_ENV
       - name: Debug Release Information
-        if: env.WANT_RELEASE == 'true' and env.IS_PUSH == 'true'
+        if: env.WANT_RELEASE == 'true' && env.IS_PUSH == 'true' # Changed 'and' to '&&'
         run: |
           echo "Creating release with tag: ${{ env.commit_ver }}"
           echo "Target SHA: ${{ github.sha }}"
@@ -147,7 +43,7 @@ jobs:
           echo "Files in directory:"
           Get-ChildItem -Path . -File
       - name: Create Release
-        if: env.WANT_RELEASE == 'true' and env.IS_PUSH == 'true'
+        if: env.WANT_RELEASE == 'true' && env.IS_PUSH == 'true' # Changed 'and' to '&&'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
