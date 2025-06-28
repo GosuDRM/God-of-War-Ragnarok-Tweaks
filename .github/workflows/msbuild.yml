@@ -18,6 +18,7 @@ jobs:
     runs-on: windows-latest
     env:
       BUILD_PRESET: Win64
+      BUILD_PRESET_X86: Win32
       CONFIGURATION: RelWithDebInfo
       INSTALL_CONFIGURATION: ${{ github.workspace }}/out/install
       DLL_OUT: lib
@@ -38,8 +39,10 @@ jobs:
           echo "commit_ver=$_ver" >> "$Env:GITHUB_ENV"
           echo "zip_name=$cmdOutput-$_ver" >> "$Env:GITHUB_ENV"
           echo "zip_file=${{ github.workspace }}\$cmdOutput-$_ver.7z" >> "$Env:GITHUB_ENV"
+          echo "zip_file_pdb=${{ github.workspace }}\$cmdOutput-$_ver-pdb.7z" >> "$Env:GITHUB_ENV"
           echo "folder=$cmdOutput" >> "$Env:GITHUB_ENV"
           echo "BUILD_CONFIGURATION=${{ github.workspace }}/out/build/${{ env.BUILD_PRESET }}" >> "$Env:GITHUB_ENV"
+          echo "BUILD_CONFIGURATION_X86=${{ github.workspace }}/out/build/${{ env.BUILD_PRESET_X86 }}" >> "$Env:GITHUB_ENV"
           $push = "false"
           $pr = "true"
           $is_pr = "${{ github.event_name }}" -ieq "pull_request"
@@ -61,6 +64,12 @@ jobs:
           $myFile = "${{github.workspace}}\CMakePresets.json"
           (Get-Content $myFile ).Replace('"installDir": "${sourceDir}/out/install",', '"installDir": "${sourceDir}/out/install/${{ env.DLL_OUT }}",') | Set-Content $myFile
           cat $myFile
+      - name: Setup CMake Project (${{ env.CONFIGURATION }}-x86)
+        run: cmake --preset ${{ env.BUILD_PRESET_X86 }}
+      - name: Build CMake Project (${{ env.CONFIGURATION }}-x86)
+        run: cmake --build ${{ env.BUILD_CONFIGURATION_X86 }} --config ${{ env.CONFIGURATION }} -- /verbosity:normal
+      - name: Install CMake Project (${{ env.CONFIGURATION }}-x86)
+        run: cmake --install ${{ env.BUILD_CONFIGURATION_X86 }} --config ${{ env.CONFIGURATION }}
       - name: Setup CMake Project (${{ env.CONFIGURATION }}-x64)
         run: cmake --preset ${{ env.BUILD_PRESET }}
       - name: Build CMake Project (${{ env.CONFIGURATION }}-x64)
@@ -70,16 +79,26 @@ jobs:
       - name: Bundle loaders and data files
         working-directory: ${{ env.INSTALL_CONFIGURATION }}
         run: |
+          mkdir x64
+          $ScriptHookZip = "ScriptHookRDR2_1.0.1491.17.zip"
+          $ASI_win32 = "Ultimate-ASI-Loader.zip"
           $ASI_x64 = "Ultimate-ASI-Loader_x64.zip"
+          $dataFilesLink = "https://github.com/illusion0001/Windows-Game-Patches/releases/download/data-files"
           $ASIDownloadLink = "https://github.com/ThirteenAG/Ultimate-ASI-Loader/releases/latest/download"
+          # curl -fLJO https://github.com/illusion0001/ScriptHook-Mirrors/releases/download/mirrors/$ScriptHookZip
           curl -fLJO $ASIDownloadLink/$ASI_x64
+          curl -fLJO $ASIDownloadLink/$ASI_win32
+          # 7z x $ScriptHookZip
+          7z x $ASI_win32 -o"Win32/!ASI_Loader_x86"
           7z x $ASI_x64 -o"x64/!ASI_Loader_x64"
+          # Copy-Item bin/ScriptHookRDR2.dll ./x64/RDR3.Patches/
           # Copy config files
           Copy-Item -Recurse -Force ${{ github.workspace }}/data/*/ ./
           Copy-Item -Recurse -Force x64/* ${{ env.DLL_OUT }}
+          Copy-Item -Recurse -Force Win32/* ${{ env.DLL_OUT }}
       - name: Clean output folder
         run: |
-          Remove-Item -Path ${{ env.INSTALL_CONFIGURATION }} -Recurse -Include *.lib,*.gitkeep,*.pdb
+          Remove-Item -Path ${{ env.INSTALL_CONFIGURATION }} -Recurse -Include *.lib,*.gitkeep
           $Folders = Get-ChildItem -Path ${{ env.INSTALL_CONFIGURATION }}\${{ env.DLL_OUT }} -Directory
           foreach ($Folder in $Folders)
           {
@@ -100,6 +119,14 @@ jobs:
               $hash | Out-File -Append -FilePath "${{ env.INSTALL_CONFIGURATION }}\hashes.txt"
               echo $hash
           }
+      - name: Upload artifact (PDB)
+        if: false # env.IS_PUSH == 'true'
+        uses: actions/upload-artifact@main
+        with:
+          name: ${{ env.zip_name }}-pdb
+          path: |
+            ${{ env.INSTALL_CONFIGURATION }}/${{ env.DLL_OUT }}
+            ${{ env.INSTALL_CONFIGURATION }}/hashes.txt
       - name: Upload artifact
         if: false # env.IS_PUSH == 'true'
         uses: actions/upload-artifact@main
@@ -107,6 +134,7 @@ jobs:
           name: ${{ env.zip_name }}
           path: |
             ${{ env.INSTALL_CONFIGURATION }}/${{ env.DLL_OUT }}
+            !${{ env.INSTALL_CONFIGURATION }}/${{ env.DLL_OUT }}/**/*.pdb
             ${{ env.INSTALL_CONFIGURATION }}/hashes.txt
       - name: Prepare Release
         if: env.WANT_RELEASE == 'true' && env.IS_PUSH == 'true'
@@ -115,6 +143,7 @@ jobs:
 
           ## ⚠️ Requires [7-Zip](https://github.com/ip7z/7zip/releases/latest) for extracting archive files. ⚠️
 
+          - [7z x86](https://github.com/ip7z/7zip/releases/download/24.09/7z2409.exe)
           - [7z x64](https://github.com/ip7z/7zip/releases/download/24.09/7z2409-x64.exe)
           
           <details>
@@ -135,6 +164,9 @@ jobs:
           '@ -f (Get-Content ".github\README.md" | Out-String), (Get-Content "${{ env.INSTALL_CONFIGURATION }}\hashes.txt" | Out-String)
           $hashMarkdown | Out-File -FilePath hash.md
           # Get-Content hash.md
+          7z a -mx9 -mtm- "${{ env.zip_file_pdb }}" ${{ env.INSTALL_CONFIGURATION }}\${{ env.DLL_OUT }}
+          7z a -mx9 -mtm- "${{ env.zip_file_pdb }}" ${{ env.INSTALL_CONFIGURATION }}\hashes.txt
+          Remove-Item -Path ${{ env.INSTALL_CONFIGURATION }} -Recurse -Include *.pdb
           7z a -mx9 -mtm- "${{ env.zip_file }}" ${{ env.INSTALL_CONFIGURATION }}\${{ env.DLL_OUT }}
           7z a -mx9 -mtm- "${{ env.zip_file }}" ${{ env.INSTALL_CONFIGURATION }}\hashes.txt
       - name: Branch Check
@@ -156,4 +188,4 @@ jobs:
         if: env.WANT_RELEASE == 'true' && env.IS_PUSH == 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: '& gh release create ${{ env.commit_ver }} "${{ env.zip_file }}" --target ${{ GITHUB.SHA }} -t "${{ env.commit_ver }}" -F hash.md${{ env.prerelease }}'
+        run: '& gh release create ${{ env.commit_ver }} "${{ env.zip_file_pdb }}" "${{ env.zip_file }}" --target ${{ GITHUB.SHA }} -t "${{ env.commit_ver }}" -F hash.md${{ env.prerelease }}'
