@@ -40,7 +40,7 @@ jobs:
           $_ver = "1.0.$(git rev-list HEAD --count)-$(git rev-parse --short=8 HEAD)+${{ github.run_number }}-branch-$branch"
           echo "commit_ver=$_ver" >> "$Env:GITHUB_ENV"
           echo "zip_name=$cmdOutput-$_ver" >> "$Env:GITHUB_ENV"
-          echo "zip_file=${{ github.workspace }}\$cmdOutput-$_ver.7z" >> "$Env:GITHUB_ENV"
+          echo "zip_file=${{ github.workspace }}\$cmdOutput-$_ver.zip" >> "$Env:GITHUB_ENV" # Changed to .zip
           echo "folder=$cmdOutput" >> "$Env:GITHUB_ENV"
           echo "BUILD_CONFIGURATION=${{ github.workspace }}/out/build/${{ env.BUILD_PRESET }}" >> "$Env:GITHUB_ENV"
           $push = "false"
@@ -112,15 +112,16 @@ jobs:
         if: env.WANT_RELEASE == 'true' && env.IS_PUSH == 'true'
         run: |
           $hashMarkdown = @'
-
-          ## ⚠️ Requires [7-Zip](https://github.com/ip7z/7zip/releases/latest) for extracting archive files. ⚠️
-
-          - [7z x64](https://github.com/ip7z/7zip/releases/download/24.09/7z2409-x64.exe)
+          
+          This release contains the compiled files.
           
           '@
           $hashMarkdown | Out-File -FilePath hash.md
-          7z a -mx9 -mtm- "${{ env.zip_file }}" ${{ env.INSTALL_CONFIGURATION }}\${{ env.DLL_OUT }}
-          7z a -mx9 -mtm- "${{ env.zip_file }}" ${{ env.INSTALL_CONFIGURATION }}\hashes.txt
+          
+          # Create the zip archive
+          Compress-Archive -Path "${{ env.INSTALL_CONFIGURATION }}\${{ env.DLL_OUT }}", "${{ env.INSTALL_CONFIGURATION }}\hashes.txt" -DestinationPath "${{ env.zip_file }}"
+          
+          Remove-Item -Path ${{ env.INSTALL_CONFIGURATION }} -Recurse -Include *.pdb # Ensure PDBs are removed before final zip (redundant after archiving)
       - name: Branch Check
         if: env.WANT_RELEASE == 'true' && env.IS_PUSH == 'true'
         run: |
