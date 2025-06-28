@@ -52,3 +52,108 @@ jobs:
           }
           if ($is_pr)
           {
+              $pr = "false"
+          }
+          echo "WANT_RELEASE=$pr" >> "$Env:GITHUB_ENV"
+          echo "IS_PUSH=$push" >> "$Env:GITHUB_ENV"
+          echo "BRANCH=$branch" >> "$Env:GITHUB_ENV"
+      - name: Add MSBuild to PATH
+        uses: microsoft/setup-msbuild@main
+      - name: Setup install folder for CI
+        run: |
+          $myFile = "${{github.workspace}}\CMakePresets.json"
+          (Get-Content $myFile ).Replace('"installDir": "${sourceDir}/out/install",', '"installDir": "${sourceDir}/out/install/${{ env.DLL_OUT }}",') | Set-Content $myFile
+          cat $myFile
+      - name: Setup CMake Project (${{ env.CONFIGURATION }}-x64)
+        run: cmake --preset ${{ env.BUILD_PRESET }}
+      - name: Build CMake Project (${{ env.CONFIGURATION }}-x64)
+        run: cmake --build ${{ env.BUILD_CONFIGURATION }} --config ${{ env.CONFIGURATION }} -- /m /verbosity:minimal
+      - name: Install CMake Project (${{ env.CONFIGURATION }}-x64)
+        run: cmake --install ${{ env.BUILD_CONFIGURATION }} --config ${{ env.CONFIGURATION }}
+      - name: Bundle loaders and data files
+        working-directory: ${{ env.INSTALL_CONFIGURATION }}
+        run: |
+          mkdir x64
+          Copy-Item -Recurse -Force x64/* ${{ env.DLL_OUT }}
+      - name: Clean output folder
+        run: |
+          Remove-Item -Path ${{ env.INSTALL_CONFIGURATION }} -Recurse -Include *.lib,*.gitkeep
+          $Folders = Get-ChildItem -Path ${{ env.INSTALL_CONFIGURATION }}\${{ env.DLL_OUT }} -Directory
+          foreach ($Folder in $Folders)
+          {
+              $HasRequiredFiles = Get-ChildItem -Path "$($Folder.FullName)\*" -Include *.asi,*.dll
+              if ($HasRequiredFiles.Count -eq 0)
+              {
+                  echo "$($Folder.FullName) not included"
+                  Remove-Item -Path $Folder.FullName -Recurse -Force
+              }
+          }
+      - name: Upload artifact (PDB)
+        if: false
+        uses: actions/upload-artifact@main
+        with:
+          name: ${{ env.zip_name }}-pdb
+          path: |
+            ${{ env.INSTALL_CONFIGURATION }}/${{ env.DLL_OUT }}
+      - name: Upload artifact
+        if: false
+        uses: actions/upload-artifact@main
+        with:
+          name: ${{ env.zip_name }}
+          path: |
+            ${{ env.INSTALL_CONFIGURATION }}/${{ env.DLL_OUT }}
+      - name: Prepare Release
+        if: env.WANT_RELEASE == 'true' && env.IS_PUSH == 'true' # Changed 'and' to '&&'
+        run: |
+          $hashMarkdown = @'
+          This release contains the compiled files.
+
+          '@
+          $hashMarkdown | Out-File -FilePath hash.md
+
+          # Navigate into the GoWR.Tweaks directory
+          Set-Location -Path "${{ env.INSTALL_CONFIGURATION }}\${{ env.DLL_OUT }}"
+          # Select only .asi files and compress them directly into the zip file
+          Get-ChildItem -Path . -Filter "*.asi" | Compress-Archive -DestinationPath "${{ env.zip_file }}"
+          # Navigate back to the workspace root
+          Set-Location -Path "${{ github.workspace }}"
+
+          # Ensure PDBs and any other unwanted files in the install directory are removed
+          Remove-Item -Path ${{ env.INSTALL_CONFIGURATION }} -Recurse
+      - name: Branch Check
+        if: env.WANT_RELEASE == 'true' && env.IS_PUSH == 'true' # Changed 'and' to '&&'
+        run: |
+          $prerelease = ""
+          if ("${{ env.BRANCH }}" -ieq "main")
+          {
+              $prerelease = ""
+              echo "Is main release"
+          }
+          else
+          {
+              $prerelease = " --prerelease"
+              echo "Is not main release: ${{ env.BRANCH }}"
+          }
+          echo "prerelease=$prerelease" >> $Env:GITHUB_ENV
+      - name: Debug Release Information
+        if: env.WANT_RELEASE == 'true' && env.IS_PUSH == 'true' # Changed 'and' to '&&'
+        run: |
+          echo "Creating release with tag: ${{ env.commit_ver }}"
+          echo "Target SHA: ${{ github.sha }}"
+          echo "Files to upload:"
+          echo "  - ${{ env.zip_file }}"
+          echo "Prerelease flag: ${{ env.prerelease }}"
+          echo "Current working directory: $(pwd)"
+          echo "Files in directory:"
+          Get-ChildItem -Path . -File
+      - name: Create Release
+        if: env.WANT_RELEASE == 'true' && env.IS_PUSH == 'true' # Changed 'and' to '&&'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ env.commit_ver }}" `
+            "${{ env.zip_file }}" `
+            --target "${{ github.sha }}" `
+            --title "${{ env.commit_ver }}" `
+            --notes-file "hash.md" `
+            ${{ env.prerelease }}
